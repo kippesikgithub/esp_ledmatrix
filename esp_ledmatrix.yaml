@@ -1,0 +1,242 @@
+esphome:
+  name: esp-leddisplay-tt
+  friendly_name: esp-leddisplay-tt
+
+esp32:
+  board: dfrobot_firebeetle2_esp32s3 # Has the same flash and PSRAM
+  framework:
+    type: arduino
+    version: recommended
+
+# Enable logging
+logger:
+  level: VERBOSE
+
+# Enable Home Assistant API
+api:
+
+ota:
+  platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: !secret fb_led
+    password: !secret fb_led_pw
+
+captive_portal:
+
+external_components:
+  - source: "github://pr#5198" # Modification for AHT20 sensor
+    components:
+      - aht10
+
+uart:
+  id: uart_bus
+  tx_pin:
+    number: GPIO39
+  rx_pin: 
+    number: GPIO38
+  baud_rate: 256000
+  parity: NONE
+  stop_bits: 1
+
+i2c:
+  - id: bus_a
+    frequency: 200kHz
+    sda: GPIO6
+    scl: GPIO7
+
+ld2410:
+
+time:
+  - platform: homeassistant
+    id: esptime
+
+light:
+  - platform: neopixelbus
+    type: GRB
+    variant: WS2812
+    pin: GPIO42
+    num_leds: 145
+    name: "led_matrix"
+    id: led_matrix_light
+    default_transition_length: 0s
+    color_correct: [50%, 50%, 50%]
+    restore_mode: ALWAYS_ON
+    internal: true
+  - platform: rgb
+    name: "Matrix Color"
+    id: matrixcolor
+    default_transition_length: 0s
+    red: output_red
+    green: output_green
+    blue: output_blue
+    restore_mode: ALWAYS_ON
+    on_turn_on: 
+      light.turn_on: led_matrix_light
+    on_turn_off: 
+      light.turn_off: led_matrix_light
+
+font:
+  - file: "dragon.ttf"
+    id: my_font
+    size: 5
+  - file: "cg-pixel-4x5.ttf"
+    id: my_font1
+    size: 5
+
+output:
+  - platform: template
+    id: output_red
+    type: float
+    write_action:
+      lambda: ;
+  - platform: template
+    id: output_green
+    type: float
+    write_action:
+      lambda: ;
+  - platform: template
+    id: output_blue
+    type: float
+    write_action:
+      lambda: ;
+      
+display:
+  - platform: addressable_light
+    id: led_matrix_display
+    addressable_light_id: led_matrix_light
+    width: 29
+    height: 5
+    pixel_mapper: |-
+      if (x % 2 == 0) {
+        return (x * 5) + y;
+      }
+      return (x * 5) + (4 - y);
+    rotation: 0°
+    update_interval: 16ms
+    lambda: |-
+      if(id(garagedeur).state == "on") {
+      auto values = id(matrixcolor).current_values;
+      float brightness = values.get_brightness();
+      Color red = Color(0xFF0000);
+      Color color(values.get_red() * brightness * 255, values.get_green() * brightness * 255, values.get_blue() * brightness * 255);
+      it.printf(0, 0, id(my_font1), red, "Garage");
+      }
+      else if(id(voordeur).state == "on") {
+      auto values = id(matrixcolor).current_values;
+      float brightness = values.get_brightness();
+      Color red = Color(0xFF0000);
+      Color green = Color(0x00FF00);
+      Color blue = Color(0x0000FF);
+      it.rectangle(1, 0, 5, 5, red);
+      it.line(4, 2, 4, 2, green);
+      it.printf(8, 0, id(my_font1), red, "Voor");
+      }
+      else if(id(deurbel).state == "on") {
+      auto values = id(matrixcolor).current_values;
+      Color red = Color(0xFF0000);
+      Color green = Color(0x00FF00);
+      Color blue = Color(0x0000FF);
+      it.printf(10, 0, id(my_font1), red, "Bel");
+      it.line(1, 1, 1, 5, red);
+      it.line(5, 1, 5, 4, red);
+      it.line(3, 0, 3, 0, red);
+      it.line(3, 4, 3, 4, green);
+      it.line(1, 1, 5, 1, red);
+      it.line(0, 4, 1, 4, red);
+      it.line(5, 4, 6, 4, red);
+      }
+      else {
+      auto values = id(matrixcolor).current_values;
+      float brightness = values.get_brightness();
+      Color color(values.get_red() * brightness * 255, values.get_green() * brightness * 255, values.get_blue() * brightness * 255);
+      it.strftime(4, 0, id(my_font1), color, "%H:%M", id(esptime).now());
+      }
+
+sensor:
+  - platform: aht10
+    variant: aht20
+    i2c_id: bus_a
+    temperature:
+      id: temperature
+      name: "Temperature"
+    humidity:
+      id: humidity
+      name: "Humidity"
+    update_interval: 30s
+
+  - platform: ld2410
+    light:
+      name: light
+    moving_distance:
+      name : Moving Distance
+    still_distance:
+      name: Still Distance
+    moving_energy:
+      name: Move Energy
+    still_energy:
+      name: Still Energy
+    detection_distance:
+      name: Detection Distance
+
+binary_sensor:
+  - platform: ld2410
+    has_target:
+      name: Presence
+    has_moving_target:
+      name: Moving Target
+    has_still_target:
+      name: Still Target
+    out_pin_presence_status:
+      name: out pin presence status
+
+  - platform: gpio
+    pin: GPIO5
+    name: gpio out pin presence
+    device_class: presence
+
+number:
+  - platform: ld2410
+    timeout:
+      name: timeout
+    light_threshold:
+      name: light threshold
+    max_move_distance_gate:
+      name: max move distance gate
+    max_still_distance_gate:
+      name: max still distance gate
+
+select:
+  - platform: ld2410
+    distance_resolution:
+      name: "distance resolution"
+    baud_rate:
+      name: "baud rate"
+    light_function:
+      name: light function
+    out_pin_level:
+      name: out pin level
+
+text_sensor:
+  - platform: ld2410
+    version:
+      name: "firmware version"
+    mac_address:
+      name: "mac address"
+  - platform: homeassistant
+    id: voordeur
+    entity_id: binary_sensor.voordeur_aqara_contact
+    internal: true
+  - platform: homeassistant
+    id: garagedeur
+    entity_id: binary_sensor.garage_garagedeur_aqara_contact
+    internal: true
+  - platform: homeassistant
+    id: deurbel
+    entity_id: input_boolean.deurbel_1min
+    internal: true
